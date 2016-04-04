@@ -28,8 +28,11 @@ import com.google.api.client.http.*;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
+import com.google.api.client.util.ExponentialBackOff;
+import com.google.api.client.util.BackOff;
 import com.google.api.services.drive.*;
 import com.google.api.services.drive.model.ParentReference;
+
 
 public class Stream2GDrive {
     private static final String APP_NAME    = "Stream2GDrive";
@@ -50,6 +53,7 @@ public class Stream2GDrive {
         opt.addOption("o",  "output",     true, "Override output/destination file name");
         opt.addOption("m",  "mime",       true, "Override guessed MIME type.");
         opt.addOption("C",  "chunk-size", true, "Set transfer chunk size, in MiB. Default is 10.0 MiB.");
+        opt.addOption("r",  "auto-retry", false,"Enable automatic retry with exponential backoff in case of error.");
 
         opt.addOption(null, "oob",       false, "Provide OAuth authentication out-of-band.");
 
@@ -109,7 +113,22 @@ public class Stream2GDrive {
             Credential creds = new AuthorizationCodeInstalledApp(flow, vcr)
                 .authorize("user");
 
-            Drive client = new Drive.Builder(ht, jf, creds)
+            List<HttpRequestInitializer> hrilist = new ArrayList<HttpRequestInitializer>();
+            hrilist.add( creds );
+
+            if (cmd.hasOption("auto-retry")) {
+                BackOff backoff = new ExponentialBackOff.Builder()
+                    .setInitialIntervalMillis(500)
+                    .setMaxElapsedTimeMillis(900*1000) // 15 minutes maximum total wait time
+                    .setMaxIntervalMillis(60*1000) // 1 minute maximum interval
+                    .setMultiplier(1.5)
+                    .setRandomizationFactor(0.5)
+                    .build();
+                hrilist.add( new ExponentialBackOffHttpRequestInitializer(backoff) );
+            }
+            HttpRequestInitializerStacker hristack = new HttpRequestInitializerStacker(hrilist);
+
+            Drive client = new Drive.Builder(ht, jf, hristack)
                 .setApplicationName(APP_NAME + "/" + APP_VERSION)
                 .build();
 
@@ -457,6 +476,37 @@ public class Stream2GDrive {
             startTime = now;
 
             return mib / sec;
+        }
+    }
+
+    private static class HttpRequestInitializerStacker
+        implements HttpRequestInitializer {
+
+        Iterable<HttpRequestInitializer> initializerList;
+
+        public HttpRequestInitializerStacker( Iterable<HttpRequestInitializer> _initializerList ) {
+            initializerList = _initializerList;
+        }
+
+        public void initialize(HttpRequest request) throws IOException {
+            for ( HttpRequestInitializer hri : initializerList ) {
+                hri.initialize( request );
+            }
+        }
+    }
+
+    private static class ExponentialBackOffHttpRequestInitializer
+        implements HttpRequestInitializer {
+
+        BackOff backoff;
+
+        public ExponentialBackOffHttpRequestInitializer( BackOff _backoff ) {
+            backoff = _backoff;
+        }
+
+        public void initialize(HttpRequest request) throws IOException {
+            request.setIOExceptionHandler( new HttpBackOffIOExceptionHandler( backoff ) );
+            request.setUnsuccessfulResponseHandler( new HttpBackOffUnsuccessfulResponseHandler( backoff ) );
         }
     }
 }
