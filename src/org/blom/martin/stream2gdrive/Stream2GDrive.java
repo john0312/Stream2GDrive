@@ -117,14 +117,13 @@ public class Stream2GDrive {
             hrilist.add( creds );
 
             if (cmd.hasOption("auto-retry")) {
-                BackOff backoff = new ExponentialBackOff.Builder()
-                    .setInitialIntervalMillis(500)
-                    .setMaxElapsedTimeMillis(900*1000) // 15 minutes maximum total wait time
-                    .setMaxIntervalMillis(60*1000) // 1 minute maximum interval
+                ExponentialBackOff.Builder backoffBuilder = new ExponentialBackOff.Builder()
+                    .setInitialIntervalMillis(200)
+                    .setMaxElapsedTimeMillis(1800*1000) // 30 minutes maximum total wait time
+                    .setMaxIntervalMillis(300*1000) // 5 minute maximum interval
                     .setMultiplier(1.5)
-                    .setRandomizationFactor(0.5)
-                    .build();
-                hrilist.add( new ExponentialBackOffHttpRequestInitializer(backoff) );
+                    .setRandomizationFactor(0.5);
+                hrilist.add( new ExponentialBackOffHttpRequestInitializer(backoffBuilder) );
             }
             HttpRequestInitializerStacker hristack = new HttpRequestInitializerStacker(hrilist);
 
@@ -498,15 +497,15 @@ public class Stream2GDrive {
     private static class ExponentialBackOffHttpRequestInitializer
         implements HttpRequestInitializer {
 
-        BackOff backoff;
+        ExponentialBackOff.Builder backoffBuilder;
 
-        public ExponentialBackOffHttpRequestInitializer( BackOff _backoff ) {
-            backoff = _backoff;
+        public ExponentialBackOffHttpRequestInitializer( ExponentialBackOff.Builder _backoffBuilder ) {
+            backoffBuilder = _backoffBuilder;
         }
 
         public void initialize(HttpRequest request) throws IOException {
-            request.setIOExceptionHandler( new HttpBackOffIOExceptionHandler( backoff ) );
-            request.setUnsuccessfulResponseHandler( new HttpBackOffUnsuccessfulResponseHandler( backoff ) );
+            request.setIOExceptionHandler( new HttpBackOffIOExceptionHandler( backoffBuilder.build() ) );
+            request.setUnsuccessfulResponseHandler( new HttpBackOffUnsuccessfulResponseHandler( backoffBuilder.build() ) );
         }
     }
 }
