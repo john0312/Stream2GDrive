@@ -118,11 +118,14 @@ public class Stream2GDrive {
 
             if (cmd.hasOption("auto-retry")) {
                 ExponentialBackOff.Builder backoffBuilder = new ExponentialBackOff.Builder()
-                    .setInitialIntervalMillis(200)
-                    .setMaxElapsedTimeMillis(1800*1000) // 30 minutes maximum total wait time
-                    .setMaxIntervalMillis(300*1000) // 5 minute maximum interval
-                    .setMultiplier(1.5)
+                    .setInitialIntervalMillis(6*1000) // 6 seconds initial retry period
+                    .setMaxElapsedTimeMillis(45*60*1000) // 45 minutes maximum total wait time
+                    .setMaxIntervalMillis(15*60*1000) // 15 minute maximum interval
+                    .setMultiplier(1.85)
                     .setRandomizationFactor(0.5);
+                // Expected total waiting time before giving up = sum([6*1.85^i for i in range(10)])
+                // ~= 55 minutes
+                // Note that Google API's HttpRequest allows for up to 10 retry.
                 hrilist.add( new ExponentialBackOffHttpRequestInitializer(backoffBuilder) );
             }
             HttpRequestInitializerStacker hristack = new HttpRequestInitializerStacker(hrilist);
